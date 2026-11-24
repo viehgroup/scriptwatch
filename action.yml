@@ -1,0 +1,49 @@
+name: scriptwatch
+description: "Watch the third-party scripts on your website and fail when one is new, changes or gains skimmer-like behaviour"
+author: VIEH Security Team
+branding:
+  icon: eye
+  color: orange
+
+inputs:
+  urls:
+    description: "Pages to check, separated by spaces or new lines"
+    required: true
+  baseline:
+    description: "Known-good state to compare with, committed to your repository"
+    default: ".scriptwatch/baseline.json"
+  fail-on:
+    description: "Fail at this severity or above: high, medium, low or never"
+    default: high
+  update:
+    description: "Save the current scripts as the new baseline (then commit the file)"
+    default: "false"
+  insecure:
+    description: "Don't verify TLS certificates (for staging sites with self-signed certificates)"
+    default: "false"
+  user-agent:
+    description: "Fetch as this browser (iphone, android, desktop, or a full user-agent string)"
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Check third-party scripts
+      shell: bash
+      env:
+        SW_URLS: ${{ inputs.urls }}
+        SW_BASELINE: ${{ inputs.baseline }}
+        SW_FAIL_ON: ${{ inputs.fail-on }}
+        SW_UPDATE: ${{ inputs.update }}
+        SW_INSECURE: ${{ inputs.insecure }}
+        SW_UA: ${{ inputs.user-agent }}
+        PYTHONPATH: ${{ github.action_path }}
+      run: |
+        # No dependencies: run straight from the action checkout.
+        read -ra urls <<< "$(echo "$SW_URLS" | tr '\n' ' ')"
+        extra=()
+        [ "$SW_UPDATE" = "true" ] && extra+=(--update)
+        [ "$SW_INSECURE" = "true" ] && extra+=(--insecure)
+        [ -n "$SW_UA" ] && extra+=(--user-agent "$SW_UA")
+        python3 -m scriptwatch scan "${urls[@]}" --baseline "$SW_BASELINE" --format github \
+          --summary "$GITHUB_STEP_SUMMARY" --fail-on "$SW_FAIL_ON" "${extra[@]}"

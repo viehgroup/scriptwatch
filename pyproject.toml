@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scriptwatch"
+version = "0.1.0"
+description = "Catch hacked third-party scripts on your website: new scripts, changes and skimmer-like behaviour"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "VIEH Security Team" }]
+requires-python = ">=3.9"
+dependencies = []
+keywords = ["security", "magecart", "skimmer", "supply-chain", "javascript", "csp", "monitoring", "github-actions"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Security",
+    "Topic :: Internet :: WWW/HTTP",
+    "Environment :: Console",
+]
+
+[project.scripts]
+scriptwatch = "scriptwatch.cli:main"
+
+[tool.setuptools]
+packages = ["scriptwatch"]
